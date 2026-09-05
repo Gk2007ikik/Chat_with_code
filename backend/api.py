@@ -44,6 +44,29 @@ app.add_middleware(
 SESSIONS: dict = {}
 
 
+@app.on_event("startup")
+def warm_up_embedder():
+    """
+    Force the embedding model to download and initialize once, right now,
+    during server startup - which has no request timeout - rather than
+    during a real user's first /api/index call, which does. Without this,
+    the very first indexing request after a deploy pays for both the
+    ~90MB one-time model download AND the actual embedding work in the
+    same HTTP request, which can exceed the platform's request timeout
+    on a real repo. This makes that cost happen at boot instead.
+    """
+    try:
+        client = get_client()
+        collection = get_collection(client, reset=True)
+        collection.add(
+            ids=["warmup"],
+            documents=["def warmup():\n    return True"],
+            metadatas=[{"file_path": "warmup.py", "start_line": 1, "end_line": 2, "name": "warmup"}],
+        )
+        print("Embedding model warmed up successfully.")
+    except Exception as e:
+        print("Embedding model warm-up failed (non-fatal):", e)
+
 class IndexRequest(BaseModel):
     session_id: str
     repo: str
