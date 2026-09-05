@@ -35,7 +35,7 @@ app = FastAPI(title="Chat With a Codebase API")
 # Tighten allow_origins to your actual frontend URL before shipping to production.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://chat-with-code-eight.vercel.app"],
+    allow_origins=["https://chat-with-code-eight.vercel.app"],,
     allow_methods=["*"],
     allow_headers=["*"],
 )
