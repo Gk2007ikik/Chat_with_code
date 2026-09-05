@@ -182,7 +182,3 @@ A few things that weren't obvious until they broke in production:
     └── tailwind.config.js
 ```
 
-*(If you've added other components since this was last written, worth
-a quick double-check against your actual repo — this reflects
-everything confirmed during development, but may not be perfectly
-exhaustive.)*
