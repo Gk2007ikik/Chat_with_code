@@ -1,8 +1,15 @@
 """
 vectorstore.py
 --------------
-Embeds code chunks with a local sentence-transformers model and stores
-them in an in-memory (ephemeral) ChromaDB collection.
+Embeds code chunks and stores them in an in-memory (ephemeral) ChromaDB
+collection.
+
+Uses ChromaDB's own built-in embedding function (ONNX Runtime, not
+PyTorch) rather than sentence-transformers directly. Same underlying
+model (MiniLM-L6-v2), same embedding quality - but ONNX Runtime is a
+much lighter dependency to import and run inference with than the full
+PyTorch stack, which matters a lot on a constrained free-tier CPU
+(e.g. Render's free web service).
 
 Uses an ephemeral client rather than a persistent on-disk one on
 purpose: on a deployed, multi-user site, every browser session calls
@@ -19,8 +26,12 @@ from chromadb.utils import embedding_functions
 
 from chunker import Chunk
 
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"  # small, fast, good enough for code text
 COLLECTION_NAME = "codebase_chunks"
+
+# Built once at import time and reused across every request in this
+# process, instead of being reconstructed on every single /api/index
+# call - avoids repeated setup cost when the server is warm.
+_EMBED_FN = embedding_functions.DefaultEmbeddingFunction()
 
 
 def get_client():
@@ -28,10 +39,6 @@ def get_client():
 
 
 def get_collection(client, reset: bool = False):
-    embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL_NAME
-    )
-
     if reset:
         try:
             client.delete_collection(COLLECTION_NAME)
@@ -40,7 +47,7 @@ def get_collection(client, reset: bool = False):
 
     return client.get_or_create_collection(
         name=COLLECTION_NAME,
-        embedding_function=embed_fn,
+        embedding_function=_EMBED_FN,
     )
 
 
