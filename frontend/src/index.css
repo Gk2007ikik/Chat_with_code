@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #0A0A0C;
+  color: #E4E4E7;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #232327;
+  border-radius: 4px;
+}
+
+@keyframes drift-grid {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-64px, -64px, 0);
+  }
+}
+
+.animated-grid-bg {
+  position: absolute;
+  inset: -50%;
+  width: 200%;
+  height: 200%;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(52, 211, 153, 0.11) 0px, rgba(52, 211, 153, 0.11) 1px, transparent 1px, transparent 32px),
+    repeating-linear-gradient(90deg, rgba(52, 211, 153, 0.11) 0px, rgba(52, 211, 153, 0.11) 1px, transparent 1px, transparent 32px);
+  animation: drift-grid 140s linear infinite;
+  will-change: transform;
+}
+
+@keyframes drift-glow {
+  0% {
+    transform: translate(-8%, -6%) scale(1);
+  }
+  12.5% {
+    transform: translate(-2%, -10%) scale(1.02);
+  }
+  25% {
+    transform: translate(4%, -10%) scale(1.04);
+  }
+  37.5% {
+    transform: translate(7%, -2%) scale(1.06);
+  }
+  50% {
+    transform: translate(6%, 8%) scale(1.08);
+  }
+  62.5% {
+    transform: translate(2%, 11%) scale(1.05);
+  }
+  75% {
+    transform: translate(-4%, 9%) scale(1.03);
+  }
+  87.5% {
+    transform: translate(-8%, 2%) scale(1.01);
+  }
+  100% {
+    transform: translate(-8%, -6%) scale(1);
+  }
+}
+
+.animated-glow-bg {
+  background: radial-gradient(circle at center, rgba(52, 211, 153, 0.18) 0%, rgba(52, 211, 153, 0) 60%);
+  width: 60%;
+  height: 60%;
+  top: 10%;
+  left: 20%;
+  animation: drift-glow 65s linear infinite;
+  filter: blur(10px);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
