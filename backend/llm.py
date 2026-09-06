@@ -24,14 +24,26 @@ PER_FILE_KEYWORDS = [
 
 SYSTEM_PROMPT = "You are a helpful assistant that explains a codebase to the user. You are given a question and several code snippets retrieved from the repository. Answer ONLY using the provided snippets. Always mention which file (and line numbers) your answer is based on. If the snippets don't actually answer the question, say so honestly instead of guessing."
 
-# ~4 characters per token is a standard estimate for English/code text,
-# good enough for budget-capping without adding a real tokenizer dependency.
-CHARS_PER_TOKEN = 4
+# Calibrated from a real observed failure, not a generic guess: a prompt
+# built under an earlier ~4-chars/token assumption (which allowed ~24,000
+# characters through) was reported by Groq's actual tokenizer as 10,838
+# real tokens - implying roughly 24000/10838 ≈ 2.2 characters per real
+# token for this kind of code-heavy content. Using 2 here (rounding down,
+# i.e. assuming slightly MORE tokens per character than observed) adds
+# deliberate extra margin, since this calibration is from a single data
+# point rather than broad measurement.
+CHARS_PER_TOKEN = 2
 
-# Stay comfortably under the lowest TPM limit seen on Groq's free tier
-# (8000 for some models). Leaves headroom for the model's own response
-# tokens, which count against the same per-minute budget on many plans.
-MAX_PROMPT_TOKENS = 6000
+# Stay well under the lowest TPM limit seen on Groq's free tier (8000 for
+# some models). This budget covers PROMPT tokens only - see max_tokens
+# below for why the response also needs its own explicit cap.
+MAX_PROMPT_TOKENS = 4000
+
+# Groq's per-minute token limit counts the reserved response length too,
+# not just the prompt. Without capping this explicitly, the API falls
+# back to a large default that can silently push a request over the
+# limit even when the prompt itself is well within budget.
+MAX_RESPONSE_TOKENS = 1024
 
 
 def _estimate_tokens(text):
@@ -57,6 +69,7 @@ def _call_groq(prompt, model, timeout=60, max_retries=1):
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.2,
+        "max_tokens": MAX_RESPONSE_TOKENS,
     }
 
     attempt = 0
