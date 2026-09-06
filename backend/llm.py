@@ -24,6 +24,19 @@ PER_FILE_KEYWORDS = [
 
 SYSTEM_PROMPT = "You are a helpful assistant that explains a codebase to the user. You are given a question and several code snippets retrieved from the repository. Answer ONLY using the provided snippets. Always mention which file (and line numbers) your answer is based on. If the snippets don't actually answer the question, say so honestly instead of guessing."
 
+# ~4 characters per token is a standard estimate for English/code text,
+# good enough for budget-capping without adding a real tokenizer dependency.
+CHARS_PER_TOKEN = 4
+
+# Stay comfortably under the lowest TPM limit seen on Groq's free tier
+# (8000 for some models). Leaves headroom for the model's own response
+# tokens, which count against the same per-minute budget on many plans.
+MAX_PROMPT_TOKENS = 6000
+
+
+def _estimate_tokens(text):
+    return max(1, len(text) // CHARS_PER_TOKEN)
+
 
 def _call_groq(prompt, model, timeout=60, max_retries=1):
     """
@@ -135,15 +148,6 @@ def summarize_file(file_path, code_sample, model="openai/gpt-oss-20b", max_words
 
 
 def build_prompt(question, hits, repo_map=None, focused_file=None):
-    context_blocks = []
-    for h in hits:
-        meta = h["meta"]
-        context_blocks.append(
-            "File: " + meta["file_path"] + " (lines " + str(meta["start_line"]) + "-" + str(meta["end_line"]) +
-            ", '" + meta["name"] + "')\n```\n" + h["code"] + "\n```"
-        )
-    context = "\n\n".join(context_blocks)
-    repo_map_section = ("\n" + repo_map + "\n") if repo_map else ""
     focused_file_section = ""
     if focused_file:
         focused_file_section = (
@@ -152,6 +156,60 @@ def build_prompt(question, hits, repo_map=None, focused_file=None):
             "\"this\", or similar without naming a file, they mean " + focused_file +
             " - look for it among the retrieved code below.\n"
         )
+
+    # Cap the total prompt size so a single request can never exceed Groq's
+    # per-minute token limit on its own. This matters because that limit
+    # caps how big ONE request can be, not just how many requests you send -
+    # so retrying an oversized request can never succeed; the only real fix
+    # is to never build an oversized prompt in the first place.
+    #
+    # ~4 characters per token is a standard, widely-used estimate for
+    # English/code text without needing a real tokenizer dependency.
+    fixed_tokens = _estimate_tokens(SYSTEM_PROMPT + focused_file_section + question)
+    remaining = max(500, MAX_PROMPT_TOKENS - fixed_tokens)
+
+    repo_map_section = ""
+    if repo_map:
+        # Give the repo map up to a third of what's left, trimming it if
+        # it alone would eat the whole budget on a large repo. The +1
+        # token of slack avoids spuriously flagging a "truncation" that
+        # is really just integer-division rounding, not an actual cut.
+        repo_map_budget = min(remaining // 3, _estimate_tokens(repo_map))
+        repo_map_chars = (repo_map_budget + 1) * CHARS_PER_TOKEN
+        trimmed_map = repo_map[:repo_map_chars]
+        if len(trimmed_map) < len(repo_map):
+            trimmed_map += "\n... (repo map truncated to fit context budget)"
+        repo_map_section = "\n" + trimmed_map + "\n"
+        remaining -= repo_map_budget
+
+    # Add retrieved chunks greedily, most-relevant-first (hits are already
+    # ordered by relevance from the vector search), stopping once the
+    # budget runs out - rather than blindly including every requested
+    # chunk and letting Groq reject the whole request.
+    context_blocks = []
+    used_tokens = 0
+    dropped = 0
+    for h in hits:
+        meta = h["meta"]
+        block = (
+            "File: " + meta["file_path"] + " (lines " + str(meta["start_line"]) + "-" + str(meta["end_line"]) +
+            ", '" + meta["name"] + "')\n```\n" + h["code"] + "\n```"
+        )
+        block_tokens = _estimate_tokens(block)
+        if used_tokens + block_tokens > remaining:
+            dropped += 1
+            continue
+        context_blocks.append(block)
+        used_tokens += block_tokens
+
+    context = "\n\n".join(context_blocks)
+    if dropped:
+        context += (
+            "\n\n(Note: " + str(dropped) + " additional retrieved chunk(s) were "
+            "omitted to stay within the model's per-minute token limit. Try "
+            "lowering 'Chunks to retrieve' for more complete coverage per chunk.)"
+        )
+
     return (
         SYSTEM_PROMPT + "\n" +
         repo_map_section +
